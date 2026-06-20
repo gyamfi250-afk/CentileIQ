@@ -170,6 +170,38 @@
         <p class="sub" id="cutoffHint" style="margin:0; align-self:center;">Set a cut-off to enable Pass/Fail list scopes.</p>
       </div>
 
+      <div class="col-picker no-print" id="scopePreviewPanel" style="display:none;">
+        <p class="sub" id="scopePreviewHeading" style="margin:0 0 8px; font-weight:600; color:var(--ink);"></p>
+        <div class="table-wrap" style="margin-top:0; max-height:280px;">
+          <table>
+            <thead><tr><th style="width:60px;">Rank</th><th>Name</th><th class="num">Score</th></tr></thead>
+            <tbody id="scopePreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card-row no-print pdf-options-row">
+        <label class="checkbox-field">
+          <input type="checkbox" id="examGradingEnabled">
+          <span>Assign grades (adds a Grade column to the PDF)</span>
+        </label>
+      </div>
+
+      <div class="col-picker no-print" id="gradingPanel" style="display:none;">
+        <div class="field">
+          <label>Grading scheme</label>
+          <select id="gradingPreset">
+            <option value="wassce">WASSCE-style (A1–F9)</option>
+            <option value="usaf">US A–F</option>
+            <option value="dcpf">Distinction / Credit / Pass / Fail</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <p class="sub" style="margin:10px 0 8px;">Grades are assigned by % of max score. Edit thresholds below if needed.</p>
+        <div id="gradeBandsList" style="display:flex; flex-direction:column; gap:6px;"></div>
+        <button class="ghost" id="addGradeBandBtn" type="button" style="margin-top:10px;">+ Add band</button>
+      </div>
+
       <div class="stats" id="examStats"></div>
       <p class="insight" id="examInsight"></p>
 
