@@ -36,6 +36,51 @@
   }
   let branding = loadBranding();
 
+  /* ---------------- Grading (persisted locally) ----------------
+     Bands are defined as { label, min } pairs against % of max score, sorted descending.
+     A score's grade is the first band whose min it meets or exceeds (>=) — same boundary
+     convention as the Pass/Fail cutoff elsewhere in this file, for consistency.
+  */
+  const GRADING_KEY = 'centileiq_grading';
+  const GRADE_PRESETS = {
+    // WASSCE scale per WAEC's published grading table (A1 Excellent 75-100 down to F9 Fail 0-39)
+    wassce: [
+      { label:'A1', min:75 }, { label:'B2', min:70 }, { label:'B3', min:65 },
+      { label:'C4', min:60 }, { label:'C5', min:55 }, { label:'C6', min:50 },
+      { label:'D7', min:45 }, { label:'E8', min:40 }, { label:'F9', min:0 }
+    ],
+    usaf: [
+      { label:'A', min:80 }, { label:'B', min:70 }, { label:'C', min:60 },
+      { label:'D', min:50 }, { label:'F', min:0 }
+    ],
+    dcpf: [
+      { label:'Distinction', min:80 }, { label:'Credit', min:65 },
+      { label:'Pass', min:50 }, { label:'Fail', min:0 }
+    ],
+    custom: [
+      { label:'A', min:80 }, { label:'B', min:70 }, { label:'C', min:60 },
+      { label:'D', min:50 }, { label:'F', min:0 }
+    ]
+  };
+
+  function loadGrading(){
+    try{
+      const saved = JSON.parse(localStorage.getItem(GRADING_KEY));
+      if(saved && saved.preset && Array.isArray(saved.bands)) return saved;
+    }catch(e){ /* fall through to default */ }
+    return { enabled:false, preset:'wassce', bands: GRADE_PRESETS.wassce.map(b=>({...b})) };
+  }
+  function saveGrading(g){ localStorage.setItem(GRADING_KEY, JSON.stringify(g)); }
+  let grading = loadGrading();
+
+  // Returns the matching band's label for a given % of max, or '—' if no band matches
+  // (shouldn't happen with a well-formed band set that bottoms out at min:0).
+  function gradeFor(pctOfMax, bands){
+    const sorted = [...bands].sort((a,b)=>b.min-a.min);
+    for(const band of sorted){ if(pctOfMax >= band.min) return band.label; }
+    return '—';
+  }
+
   /* ---------------- Shared PDF helpers ---------------- */
   const PAGE_W = 595.28; // A4 pt, portrait
   const MARGIN = 40;
@@ -47,23 +92,18 @@
 
   function drawHeader(doc, opts){
     // opts: { orgName, detailLines: string[], title, logoDataUrl }
-    // Centered letterhead layout: logo (if any) sits above the org name, and everything —
-    // name, contact details, title — is centered on the page width.
+    // Logo sits fixed at the left margin inside a circular frame; the org name and contact
+    // details remain centered on the full page width, independent of the logo's presence.
     const lines = (opts.detailLines || []).filter(Boolean);
     const pageCenterX = PAGE_W / 2;
     let y = MARGIN;
-
-    if(opts.logoDataUrl){
-      const logoSize = 38;
-      try{ doc.addImage(opts.logoDataUrl, 'PNG', pageCenterX - logoSize/2, y, logoSize, logoSize); }catch(e){}
-      y += logoSize + 10;
-    }
+    const blockStartY = y;
 
     doc.setFont('helvetica','bold');
     doc.setFontSize(14);
     doc.setTextColor(28,42,63);
-    doc.text(opts.orgName || 'CentileIQ', pageCenterX, y, { align:'center' });
-    y += 16;
+    doc.text(opts.orgName || 'CentileIQ', pageCenterX, y + 8, { align:'center' });
+    y += 24;
 
     doc.setFont('helvetica','normal');
     doc.setFontSize(9);
@@ -73,9 +113,30 @@
       y += 12;
     });
 
+    const blockEndY = lines.length ? y - 12 + 8 : y;
+
+    // Circular logo placeholder, fixed at the left margin, vertically centered against the
+    // name+details block so it doesn't look stranded at the top when there are several lines.
+    if(opts.logoDataUrl){
+      const r = 22;
+      const cx = MARGIN + r;
+      const cy = (blockStartY + 8 + blockEndY) / 2;
+      try{
+        doc.saveGraphicsState();
+        doc.circle(cx, cy, r, null);
+        doc.clip();
+        doc.discardPath();
+        doc.addImage(opts.logoDataUrl, 'PNG', cx - r, cy - r, r*2, r*2);
+        doc.restoreGraphicsState();
+        // Thin ring around the circle so the crop edge reads as deliberate, not accidental
+        doc.setDrawColor(226,221,208);
+        doc.setLineWidth(1);
+        doc.circle(cx, cy, r, 'S');
+      }catch(e){ /* malformed image — skip the logo rather than break the PDF */ }
+    }
+
+    y = Math.max(blockEndY, blockStartY + 44);
     y += 10;
-    // Short centered accent rule beneath the letterhead block, rather than a full-width line —
-    // reads as a deliberate divider rather than a stray ruled edge.
     doc.setDrawColor(28,125,118);
     doc.setLineWidth(1.5);
     doc.line(pageCenterX - 28, y, pageCenterX + 28, y);
@@ -203,7 +264,107 @@
     return y + 40;
   }
 
-  /* ---------------- Exam Rankings PDF ---------------- */
+  /* ---------------- Cut-off / scope (Pass/Fail) helper ----------------
+     Shared between buildExamPdf and the live on-screen preview so the filtering rule
+     (score >= cutoff = Pass) only ever lives in one place.
+  */
+  function getCutoffScope(){
+    const cutoffEl = document.getElementById('examCutoff');
+    const cutoffRaw = cutoffEl ? cutoffEl.value.trim() : '';
+    const hasCutoff = cutoffRaw !== '' && !isNaN(parseFloat(cutoffRaw));
+    const cutoff = hasCutoff ? parseFloat(cutoffRaw) : null;
+    const scope = hasCutoff ? (document.getElementById('examPdfScope')?.value || 'all') : 'all';
+    return { cutoff, scope, hasCutoff };
+  }
+
+  function applyScopeFilter(sortedAll, scope, cutoff){
+    if(scope === 'pass') return sortedAll.filter(r => r.score >= cutoff);
+    if(scope === 'fail') return sortedAll.filter(r => r.score < cutoff);
+    return sortedAll;
+  }
+
+  function renderScopePreview(){
+    const panel = document.getElementById('scopePreviewPanel');
+    const heading = document.getElementById('scopePreviewHeading');
+    const body = document.getElementById('scopePreviewBody');
+    if(!panel || !heading || !body) return;
+
+    const { cutoff, scope } = getCutoffScope();
+
+    if(scope === 'all' || typeof lastExamRows === 'undefined' || !lastExamRows.length){
+      panel.style.display = 'none';
+      return;
+    }
+
+    const sortedAll = [...lastExamRows].sort((a,b)=>a.rank-b.rank);
+    const filtered = applyScopeFilter(sortedAll, scope, cutoff);
+
+    panel.style.display = 'block';
+    const scopeName = scope === 'pass' ? 'Pass list' : 'Fail list';
+    const rule = scope === 'pass' ? `score ≥ ${cutoff}` : `score < ${cutoff}`;
+    heading.textContent = `${scopeName} preview — ${rule} — ${filtered.length} of ${sortedAll.length} student(s)`;
+
+    body.innerHTML = filtered.map(r => `
+      <tr>
+        <td><span class="rank-pill">#${r.rank}</span></td>
+        <td>${(r.name||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}</td>
+        <td class="num">${r.score}/${r.max}</td>
+      </tr>`).join('') || '<tr><td colspan="3" style="text-align:center; color:var(--ink-soft);">No students in this list.</td></tr>';
+  }
+
+  /* ---------------- Grading UI ---------------- */
+  function renderGradeBandsList(){
+    const list = document.getElementById('gradeBandsList');
+    const presetSelect = document.getElementById('gradingPreset');
+    if(!list) return;
+    if(presetSelect) presetSelect.value = grading.preset;
+
+    const isCustom = grading.preset === 'custom';
+    const sorted = [...grading.bands].sort((a,b)=>b.min-a.min);
+
+    list.innerHTML = sorted.map((band, i) => `
+      <div class="grade-band-row" data-band-index="${i}">
+        <input type="text" class="bandLabelInput" value="${band.label.replace(/"/g,'&quot;')}" ${isCustom?'':'disabled'} placeholder="Label">
+        <span class="grade-band-meta">≥</span>
+        <input type="number" class="bandMinInput" value="${band.min}" min="0" max="100" ${isCustom?'':'disabled'}>
+        <span class="grade-band-meta">% of max</span>
+        ${isCustom ? `<button class="icon-btn" type="button" data-remove-band="${i}" title="Remove band">✕</button>` : ''}
+      </div>`).join('');
+
+    const addBtn = document.getElementById('addGradeBandBtn');
+    if(addBtn) addBtn.style.display = isCustom ? 'inline-flex' : 'none';
+
+    if(isCustom){
+      list.querySelectorAll('.bandLabelInput, .bandMinInput').forEach(el => {
+        el.addEventListener('change', readBandsFromUI);
+      });
+      list.querySelectorAll('[data-remove-band]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.removeBand, 10);
+          const sortedNow = [...grading.bands].sort((a,b)=>b.min-a.min);
+          sortedNow.splice(idx, 1);
+          grading.bands = sortedNow;
+          saveGrading(grading);
+          renderGradeBandsList();
+        });
+      });
+    }
+  }
+
+  function readBandsFromUI(){
+    const list = document.getElementById('gradeBandsList');
+    if(!list) return;
+    const rows = Array.from(list.querySelectorAll('.grade-band-row'));
+    const bands = rows.map(row => {
+      const label = row.querySelector('.bandLabelInput')?.value.trim() || '?';
+      const min = parseFloat(row.querySelector('.bandMinInput')?.value);
+      return { label, min: isNaN(min) ? 0 : min };
+    });
+    grading.bands = bands;
+    saveGrading(grading);
+  }
+
+
   function buildExamPdf(){
     if(typeof students === 'undefined' || !students.length){ alert('Add students first.'); return; }
     if(typeof lastExamRows === 'undefined' || !lastExamRows.length){ alert('Nothing to export yet.'); return; }
@@ -212,22 +373,13 @@
     const decimals = decimalsEl ? parseInt(decimalsEl.value, 10) : 1;
     const includeChartChecked = document.getElementById('examPdfIncludeChart')?.checked ?? true;
 
-    const cutoffEl = document.getElementById('examCutoff');
-    const cutoffRaw = cutoffEl ? cutoffEl.value.trim() : '';
-    const hasCutoff = cutoffRaw !== '' && !isNaN(parseFloat(cutoffRaw));
-    const cutoff = hasCutoff ? parseFloat(cutoffRaw) : null;
-    const scope = hasCutoff ? (document.getElementById('examPdfScope')?.value || 'all') : 'all';
+    const { cutoff, scope } = getCutoffScope();
 
     const doc = newDoc();
     const sortedAll = [...lastExamRows].sort((a,b)=>a.rank-b.rank);
 
     // Apply Pass/Fail scope filtering. Pass = score >= cutoff (per the agreed boundary rule).
-    let sorted = sortedAll;
-    if(scope === 'pass'){
-      sorted = sortedAll.filter(r => r.score >= cutoff);
-    } else if(scope === 'fail'){
-      sorted = sortedAll.filter(r => r.score < cutoff);
-    }
+    const sorted = applyScopeFilter(sortedAll, scope, cutoff);
 
     if(scope !== 'all' && !sorted.length){
       alert(scope === 'pass' ? 'No students meet the pass mark — nothing to print.' : 'No students are below the pass mark — nothing to print.');
@@ -285,10 +437,15 @@
       name:       { header:'Name',      value:r=>r.name,                             halign:'left',   width:null },
       score:      { header:'Score',     value:r=>`${r.score}/${r.max}`,              halign:'center', width:75 },
       pctOfMax:   { header:'% of Max',  value:r=>r.pctOfMax.toFixed(1)+'%',          halign:'center', width:80 },
-      percentile: { header:'Percentile',value:r=>r.pct.toFixed(decimals),            halign:'center', width:80 }
+      percentile: { header:'Percentile',value:r=>r.pct.toFixed(decimals),            halign:'center', width:80 },
+      grade:      { header:'Grade',     value:r=>gradeFor(r.pctOfMax, grading.bands),halign:'center', width:60 }
     };
     const checkedCols = Array.from(document.querySelectorAll('.examColCheck:checked')).map(el=>el.value);
-    const colKeys = Object.keys(ALL_EXAM_COLS).filter(k => k==='rank' || k==='name' || checkedCols.includes(k));
+    let colKeys = Object.keys(ALL_EXAM_COLS).filter(k => k==='rank' || k==='name' || checkedCols.includes(k));
+    // Grade only ever appears when the grading feature itself is switched on, regardless of
+    // the column checkbox state — it isn't a real column until grading is enabled.
+    if(!grading.enabled) colKeys = colKeys.filter(k => k !== 'grade');
+    else if(!colKeys.includes('grade')) colKeys.push('grade');
     const cols = colKeys.map(k => ALL_EXAM_COLS[k]);
 
     const columnStyles = {};
@@ -525,9 +682,22 @@
       } else {
         cutoffHint.textContent = `Pass = score ≥ ${parseFloat(cutoffInput.value)}.`;
       }
+      renderScopePreview();
     }
     cutoffInput?.addEventListener('input', syncCutoffState);
+    scopeSelect?.addEventListener('change', renderScopePreview);
     syncCutoffState();
+
+    // Keep the Pass/Fail preview in sync whenever the roster itself changes (add/remove/import),
+    // not just when the cutoff or scope inputs change. renderExam is defined in app.js, loaded
+    // before this file, and is a plain top-level function — safe to wrap without editing app.js.
+    if(typeof renderExam === 'function'){
+      const originalRenderExam = renderExam;
+      renderExam = function(){
+        originalRenderExam.apply(this, arguments);
+        renderScopePreview();
+      };
+    }
 
     document.getElementById('examColsToggleBtn')?.addEventListener('click', () => {
       const panel = document.getElementById('examColsPanel');
@@ -544,6 +714,40 @@
         if(preview){ preview.src = branding[key]; preview.style.display = 'inline-block'; }
       }
     });
+
+    const gradingEnabledEl = document.getElementById('examGradingEnabled');
+    const gradingPanel = document.getElementById('gradingPanel');
+    const gradingPresetEl = document.getElementById('gradingPreset');
+
+    if(gradingEnabledEl){
+      gradingEnabledEl.checked = grading.enabled;
+      gradingPanel.style.display = grading.enabled ? 'block' : 'none';
+      gradingEnabledEl.addEventListener('change', () => {
+        grading.enabled = gradingEnabledEl.checked;
+        saveGrading(grading);
+        gradingPanel.style.display = grading.enabled ? 'block' : 'none';
+      });
+    }
+
+    gradingPresetEl?.addEventListener('change', () => {
+      grading.preset = gradingPresetEl.value;
+      // Switching to a built-in preset resets bands to that preset's defaults. Switching to
+      // Custom starts from whatever the currently-active preset's bands were, as a sane
+      // starting point the user can then edit rather than starting from a blank list.
+      grading.bands = (grading.preset === 'custom')
+        ? grading.bands.map(b=>({...b}))
+        : GRADE_PRESETS[grading.preset].map(b=>({...b}));
+      saveGrading(grading);
+      renderGradeBandsList();
+    });
+
+    document.getElementById('addGradeBandBtn')?.addEventListener('click', () => {
+      grading.bands.push({ label:'New', min:0 });
+      saveGrading(grading);
+      renderGradeBandsList();
+    });
+
+    renderGradeBandsList();
   });
 
 })();
