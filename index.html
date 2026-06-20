@@ -128,6 +128,48 @@
         </div>
       </div>
 
+      <div class="card-row no-print pdf-options-row">
+        <div class="field" style="min-width:170px;">
+          <label>PDF percentile decimals</label>
+          <select id="examPdfDecimals">
+            <option value="0">0 — whole numbers</option>
+            <option value="1" selected>1 decimal</option>
+            <option value="2">2 decimals</option>
+          </select>
+        </div>
+        <label class="checkbox-field">
+          <input type="checkbox" id="examPdfIncludeChart" checked>
+          <span>Include score distribution chart in PDF</span>
+        </label>
+        <button class="ghost col-toggle-btn" id="examColsToggleBtn" type="button">☰ Columns</button>
+      </div>
+      <div class="col-picker" id="examColsPanel" style="display:none;">
+        <p class="sub" style="margin:0 0 8px;">Choose which columns appear in the PDF.</p>
+        <div class="col-picker-grid">
+          <label class="checkbox-field"><input type="checkbox" class="examColCheck" value="rank" checked disabled><span>Rank</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="examColCheck" value="name" checked disabled><span>Name</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="examColCheck" value="score" checked><span>Score</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="examColCheck" value="pctOfMax" checked><span>% of Max</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="examColCheck" value="percentile" checked><span>Percentile</span></label>
+        </div>
+      </div>
+
+      <div class="card-row no-print pdf-options-row">
+        <div class="field" style="min-width:150px;">
+          <label>Pass mark / cut-off</label>
+          <input type="number" id="examCutoff" placeholder="e.g. 50">
+        </div>
+        <div class="field" style="min-width:170px;">
+          <label>PDF list scope</label>
+          <select id="examPdfScope">
+            <option value="all" selected>All students</option>
+            <option value="pass">Pass list only (score ≥ cut-off)</option>
+            <option value="fail">Fail list only (score &lt; cut-off)</option>
+          </select>
+        </div>
+        <p class="sub" id="cutoffHint" style="margin:0; align-self:center;">Set a cut-off to enable Pass/Fail list scopes.</p>
+      </div>
+
       <div class="stats" id="examStats"></div>
       <p class="insight" id="examInsight"></p>
 
@@ -254,6 +296,24 @@
           <button class="ghost" id="clearGrowthBtn" type="button" style="color:var(--rose); border-color:var(--rose-tint);">🗑 Clear all</button>
         </div>
       </div>
+
+      <div class="card-row no-print pdf-options-row">
+        <button class="ghost col-toggle-btn" id="growthColsToggleBtn" type="button">☰ Columns</button>
+      </div>
+      <div class="col-picker" id="growthColsPanel" style="display:none;">
+        <p class="sub" style="margin:0 0 8px;">Choose which columns appear in the PDF.</p>
+        <div class="col-picker-grid">
+          <label class="checkbox-field"><input type="checkbox" class="growthColCheck" value="name" checked disabled><span>Name</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="growthColCheck" value="sex" checked><span>Sex</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="growthColCheck" value="age" checked><span>Age / Length</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="growthColCheck" value="measurement" checked><span>Measurement</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="growthColCheck" value="value" checked><span>Value</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="growthColCheck" value="z" checked><span>Z-score</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="growthColCheck" value="centile" checked><span>Centile</span></label>
+          <label class="checkbox-field"><input type="checkbox" class="growthColCheck" value="flag" checked><span>Flag</span></label>
+        </div>
+      </div>
+
       <div class="table-wrap">
         <table>
           <thead>
