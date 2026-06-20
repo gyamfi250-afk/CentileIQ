@@ -15,15 +15,20 @@
   function loadBranding(){
     try{
       return JSON.parse(localStorage.getItem(BRAND_KEY)) || {
-        examOrgName: '',
-        examTeacherName: '',
-        examClassName: '',
-        growthOrgName: '',
-        growthProviderName: '',
-        logoDataUrl: null
+        examOrgName: '', examTeacherName: '', examClassName: '',
+        examAddress: '', examPhone: '', examEmail: '',
+        examSignerName: '', examSignerTitle: '',
+        growthOrgName: '', growthProviderName: '',
+        growthAddress: '', growthPhone: '', growthEmail: '',
+        growthSignerName: '', growthSignerTitle: '',
+        logoDataUrl: null, signatureDataUrl: null, stampDataUrl: null
       };
     }catch(e){
-      return { examOrgName:'', examTeacherName:'', examClassName:'', growthOrgName:'', growthProviderName:'', logoDataUrl:null };
+      return { examOrgName:'', examTeacherName:'', examClassName:'', examAddress:'', examPhone:'', examEmail:'',
+        examSignerName:'', examSignerTitle:'',
+        growthOrgName:'', growthProviderName:'', growthAddress:'', growthPhone:'', growthEmail:'',
+        growthSignerName:'', growthSignerTitle:'',
+        logoDataUrl:null, signatureDataUrl:null, stampDataUrl:null };
     }
   }
   function saveBranding(b){
@@ -41,7 +46,7 @@
   }
 
   function drawHeader(doc, opts){
-    // opts: { orgName, subLine1, subLine2, title, logoDataUrl }
+    // opts: { orgName, detailLines: string[], title, logoDataUrl }
     let y = MARGIN;
     if(opts.logoDataUrl){
       try{ doc.addImage(opts.logoDataUrl, 'PNG', MARGIN, y - 6, 36, 36); }catch(e){}
@@ -56,8 +61,10 @@
     doc.setFont('helvetica','normal');
     doc.setFontSize(9);
     doc.setTextColor(82,96,122);
-    if(opts.subLine1) doc.text(opts.subLine1, textX, y + 21);
-    if(opts.subLine2) doc.text(opts.subLine2, textX, y + 33);
+    const lines = (opts.detailLines || []).filter(Boolean);
+    lines.forEach((line, i) => {
+      doc.text(line, textX, y + 21 + i*12);
+    });
 
     // Right-aligned date
     doc.setFontSize(9);
@@ -65,7 +72,9 @@
     const dateStr = 'Generated ' + new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'});
     doc.text(dateStr, PAGE_W - MARGIN, y + 8, { align:'right' });
 
-    y += 44;
+    // Header block grows with however many detail lines exist (min height covers 2 lines worth)
+    const linesHeight = Math.max(lines.length, 2) * 12 + 10;
+    y += 14 + linesHeight;
     doc.setDrawColor(226,221,208);
     doc.setLineWidth(1);
     doc.line(MARGIN, y, PAGE_W - MARGIN, y);
@@ -102,10 +111,58 @@
     }
   }
 
+  /* ---------------- Signature / sign-off block ---------------- */
+  // Draws a sign-off row near the bottom of the report: signature (image or blank line) + printed
+  // name/title on the left, stamp image on the right if provided. Adds a new page first if there
+  // isn't enough room left on the current one.
+  function drawSignatureBlock(doc, startY, opts){
+    // opts: { signerName, signerTitle, signatureDataUrl, stampDataUrl }
+    const pageH = doc.internal.pageSize.getHeight();
+    const blockH = 90;
+    let y = startY;
+
+    if(y + blockH > pageH - 50){
+      doc.addPage();
+      y = MARGIN + 20;
+    } else {
+      y += 20;
+    }
+
+    const sigX = MARGIN;
+    const sigLineW = 200;
+    const stampX = PAGE_W - MARGIN - 80;
+
+    // Signature image (if provided) sits above the line; otherwise just a blank line to sign by hand
+    if(opts.signatureDataUrl){
+      try{ doc.addImage(opts.signatureDataUrl, 'PNG', sigX, y - 32, 130, 36); }catch(e){}
+    }
+
+    doc.setDrawColor(28,42,63);
+    doc.setLineWidth(0.75);
+    doc.line(sigX, y, sigX + sigLineW, y);
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(10);
+    doc.setTextColor(28,42,63);
+    doc.text(opts.signerName || 'Signed', sigX, y + 14);
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(82,96,122);
+    doc.text(opts.signerTitle || 'Authorized signature', sigX, y + 26);
+
+    // Stamp/seal image, placed to the right, separate from the signature line
+    if(opts.stampDataUrl){
+      try{ doc.addImage(opts.stampDataUrl, 'PNG', stampX, y - 60, 80, 80); }catch(e){}
+    }
+
+    return y + 40;
+  }
+
   /* ---------------- Exam Rankings PDF ---------------- */
   function buildExamPdf(){
-    if(!window.students || !students.length){ alert('Add students first.'); return; }
-    if(!window.lastExamRows || !lastExamRows.length){ alert('Nothing to export yet.'); return; }
+    if(typeof students === 'undefined' || !students.length){ alert('Add students first.'); return; }
+    if(typeof lastExamRows === 'undefined' || !lastExamRows.length){ alert('Nothing to export yet.'); return; }
 
     const doc = newDoc();
     const scores = students.map(s=>s.score);
@@ -113,8 +170,12 @@
 
     let y = drawHeader(doc, {
       orgName: branding.examOrgName || 'CentileIQ',
-      subLine1: branding.examClassName ? `Class: ${branding.examClassName}` : null,
-      subLine2: branding.examTeacherName ? `Teacher: ${branding.examTeacherName}` : null,
+      detailLines: [
+        branding.examClassName ? `Class: ${branding.examClassName}` : null,
+        branding.examTeacherName ? `Teacher: ${branding.examTeacherName}` : null,
+        branding.examAddress || null,
+        [branding.examPhone, branding.examEmail].filter(Boolean).join('  ·  ') || null
+      ],
       title: 'Examination Ranking Report',
       logoDataUrl: branding.logoDataUrl
     });
@@ -159,19 +220,30 @@
       }
     });
 
+    let afterTableY = doc.lastAutoTable.finalY;
+    drawSignatureBlock(doc, afterTableY, {
+      signerName: branding.examSignerName,
+      signerTitle: branding.examSignerTitle,
+      signatureDataUrl: branding.signatureDataUrl,
+      stampDataUrl: branding.stampDataUrl
+    });
+
     finalizeFooters(doc, !proActive());
     doc.save('exam_ranking_report.pdf');
   }
 
   /* ---------------- Growth Screening PDF ---------------- */
   function buildGrowthPdf(){
-    if(!window.growthEntries || !growthEntries.length){ alert('Add a measurement first.'); return; }
+    if(typeof growthEntries === 'undefined' || !growthEntries.length){ alert('Add a measurement first.'); return; }
 
     const doc = newDoc();
     let y = drawHeader(doc, {
       orgName: branding.growthOrgName || 'CentileIQ',
-      subLine1: branding.growthProviderName ? `Provider: ${branding.growthProviderName}` : null,
-      subLine2: null,
+      detailLines: [
+        branding.growthProviderName ? `Provider: ${branding.growthProviderName}` : null,
+        branding.growthAddress || null,
+        [branding.growthPhone, branding.growthEmail].filter(Boolean).join('  ·  ') || null
+      ],
       title: 'Growth Screening Report',
       logoDataUrl: branding.logoDataUrl
     });
@@ -219,6 +291,14 @@
     doc.setTextColor(138,83,24);
     doc.text(boxLines, MARGIN + 10, afterTableY + 14);
 
+    const afterDisclaimerY = afterTableY + boxH;
+    drawSignatureBlock(doc, afterDisclaimerY, {
+      signerName: branding.growthSignerName,
+      signerTitle: branding.growthSignerTitle,
+      signatureDataUrl: branding.signatureDataUrl,
+      stampDataUrl: branding.stampDataUrl
+    });
+
     finalizeFooters(doc, !proActive());
     doc.save('growth_screening_report.pdf');
   }
@@ -242,6 +322,12 @@
     document.getElementById('brandPersonInput').value = isExam ? branding.examTeacherName : branding.growthProviderName;
     document.getElementById('brandClassWrap').style.display = isExam ? 'block' : 'none';
     document.getElementById('brandClassInput').value = branding.examClassName || '';
+    document.getElementById('brandAddressInput').value = isExam ? (branding.examAddress || '') : (branding.growthAddress || '');
+    document.getElementById('brandPhoneInput').value = isExam ? (branding.examPhone || '') : (branding.growthPhone || '');
+    document.getElementById('brandEmailInput').value = isExam ? (branding.examEmail || '') : (branding.growthEmail || '');
+    document.getElementById('brandSignerNameLabel').textContent = isExam ? 'Approved by — name (optional)' : 'Signed by — name (optional)';
+    document.getElementById('brandSignerNameInput').value = isExam ? (branding.examSignerName || '') : (branding.growthSignerName || '');
+    document.getElementById('brandSignerTitleInput').value = isExam ? (branding.examSignerTitle || '') : (branding.growthSignerTitle || '');
     modal.dataset.kind = kind;
     modal.style.display = 'flex';
   }
@@ -255,25 +341,40 @@
     const kind = modal.dataset.kind;
     const org = document.getElementById('brandOrgInput').value.trim();
     const person = document.getElementById('brandPersonInput').value.trim();
+    const address = document.getElementById('brandAddressInput').value.trim();
+    const phone = document.getElementById('brandPhoneInput').value.trim();
+    const email = document.getElementById('brandEmailInput').value.trim();
+    const signerName = document.getElementById('brandSignerNameInput').value.trim();
+    const signerTitle = document.getElementById('brandSignerTitleInput').value.trim();
     if(kind === 'exam'){
       branding.examOrgName = org;
       branding.examTeacherName = person;
       branding.examClassName = document.getElementById('brandClassInput').value.trim();
+      branding.examAddress = address;
+      branding.examPhone = phone;
+      branding.examEmail = email;
+      branding.examSignerName = signerName;
+      branding.examSignerTitle = signerTitle;
     } else {
       branding.growthOrgName = org;
       branding.growthProviderName = person;
+      branding.growthAddress = address;
+      branding.growthPhone = phone;
+      branding.growthEmail = email;
+      branding.growthSignerName = signerName;
+      branding.growthSignerTitle = signerTitle;
     }
     saveBranding(branding);
     closeBrandingModal();
   }
 
-  function handleLogoUpload(file){
+  function handleImageUpload(file, brandingKey, previewElId){
     if(!file) return;
     const reader = new FileReader();
     reader.onload = e => {
-      branding.logoDataUrl = e.target.result;
+      branding[brandingKey] = e.target.result;
       saveBranding(branding);
-      const preview = document.getElementById('brandLogoPreview');
+      const preview = document.getElementById(previewElId);
       if(preview){ preview.src = e.target.result; preview.style.display = 'inline-block'; }
     };
     reader.readAsDataURL(file);
@@ -287,12 +388,16 @@
     document.getElementById('brandGrowthBtn')?.addEventListener('click', ()=>openBrandingModal('growth'));
     document.getElementById('brandingSaveBtn')?.addEventListener('click', saveBrandingFromModal);
     document.getElementById('brandingCancelBtn')?.addEventListener('click', closeBrandingModal);
-    document.getElementById('brandLogoInput')?.addEventListener('change', e => handleLogoUpload(e.target.files[0]));
+    document.getElementById('brandLogoInput')?.addEventListener('change', e => handleImageUpload(e.target.files[0], 'logoDataUrl', 'brandLogoPreview'));
+    document.getElementById('brandSignatureInput')?.addEventListener('change', e => handleImageUpload(e.target.files[0], 'signatureDataUrl', 'brandSignaturePreview'));
+    document.getElementById('brandStampInput')?.addEventListener('change', e => handleImageUpload(e.target.files[0], 'stampDataUrl', 'brandStampPreview'));
 
-    if(branding.logoDataUrl){
-      const preview = document.getElementById('brandLogoPreview');
-      if(preview){ preview.src = branding.logoDataUrl; preview.style.display = 'inline-block'; }
-    }
+    [['logoDataUrl','brandLogoPreview'], ['signatureDataUrl','brandSignaturePreview'], ['stampDataUrl','brandStampPreview']].forEach(([key, elId])=>{
+      if(branding[key]){
+        const preview = document.getElementById(elId);
+        if(preview){ preview.src = branding[key]; preview.style.display = 'inline-block'; }
+      }
+    });
   });
 
 })();
