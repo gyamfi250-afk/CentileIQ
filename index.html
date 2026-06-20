@@ -312,10 +312,52 @@
       <input type="text" id="brandPersonInput" placeholder="e.g. Mrs. Owusu">
     </div>
     <div class="field" style="margin-top:10px;">
+      <label>Address (optional)</label>
+      <input type="text" id="brandAddressInput" placeholder="e.g. 12 Liberation Rd, Accra">
+    </div>
+    <div class="card-row" style="margin-top:10px; gap:10px;">
+      <div class="field grow">
+        <label>Phone (optional)</label>
+        <input type="text" id="brandPhoneInput" placeholder="e.g. 024 123 4567">
+      </div>
+      <div class="field grow">
+        <label>Email (optional)</label>
+        <input type="text" id="brandEmailInput" placeholder="e.g. office@school.edu">
+      </div>
+    </div>
+    <div class="field" style="margin-top:10px;">
       <label>Logo (optional)</label>
       <div class="card-row" style="gap:10px;">
         <img id="brandLogoPreview" style="display:none; width:36px; height:36px; border-radius:8px; object-fit:cover; border:1px solid var(--line);">
         <input type="file" id="brandLogoInput" accept="image/png,image/jpeg">
+      </div>
+    </div>
+
+    <div class="divider" style="margin:16px 0;"></div>
+    <p class="sub" style="margin-bottom:10px; font-weight:600; color:var(--ink);">Sign-off</p>
+
+    <div class="field">
+      <label id="brandSignerNameLabel">Approved by — name (optional)</label>
+      <input type="text" id="brandSignerNameInput" placeholder="e.g. Dr. Kwame Mensah">
+    </div>
+    <div class="field" style="margin-top:10px;">
+      <label>Title / role (optional)</label>
+      <input type="text" id="brandSignerTitleInput" placeholder="e.g. Head Teacher / Attending Physician">
+    </div>
+    <div class="field" style="margin-top:10px;">
+      <label>Signature image (optional)</label>
+      <p class="sub" style="margin:0 0 8px;">A photo or scan of a handwritten signature, transparent PNG works best. Leave blank to print a blank line to sign by hand.</p>
+      <div class="card-row" style="gap:10px;">
+        <img id="brandSignaturePreview" style="display:none; height:30px; max-width:90px; object-fit:contain; border:1px solid var(--line); border-radius:6px; background:#fff;">
+        <input type="file" id="brandSignatureInput" accept="image/png,image/jpeg">
+      </div>
+    </div>
+    <div class="field" style="margin-top:10px;">
+      <label>Stamp / seal image (optional)</label>
+      <p class="sub" style="margin:0 0 8px;">School crest or clinic seal — shown beside the signature.</p>
+      <div class="card-row" style="gap:10px;">
+        <img id="brandStampPreview" style="display:none; width:36px; height:36px; object-fit:contain; border:1px solid var(--line); border-radius:6px; background:#fff;">
+        <input type="file" id="brandStampInput" accept="image/png,image/jpeg">
       </div>
     </div>
 
