@@ -47,44 +47,59 @@
 
   function drawHeader(doc, opts){
     // opts: { orgName, detailLines: string[], title, logoDataUrl }
-    let y = MARGIN;
+    const lines = (opts.detailLines || []).filter(Boolean);
+    const lineCount = Math.max(lines.length, 1); // at least 1 line of vertical space reserved
+    const blockTop = MARGIN;
+    const nameBaselineY = blockTop + 14;
+    const firstDetailY = nameBaselineY + 15;
+    const blockBottom = lines.length ? (firstDetailY + (lines.length-1)*12) : nameBaselineY;
+
+    // Logo vertically centered against the full name+details text block
     if(opts.logoDataUrl){
-      try{ doc.addImage(opts.logoDataUrl, 'PNG', MARGIN, y - 6, 36, 36); }catch(e){}
+      const logoSize = 36;
+      const blockCenterY = (nameBaselineY - 9 + blockBottom + 3) / 2;
+      try{ doc.addImage(opts.logoDataUrl, 'PNG', MARGIN, blockCenterY - logoSize/2, logoSize, logoSize); }catch(e){}
     }
     const textX = opts.logoDataUrl ? MARGIN + 46 : MARGIN;
 
     doc.setFont('helvetica','bold');
     doc.setFontSize(13);
     doc.setTextColor(28,42,63);
-    doc.text(opts.orgName || 'CentileIQ', textX, y + 8);
+    doc.text(opts.orgName || 'CentileIQ', textX, nameBaselineY);
 
     doc.setFont('helvetica','normal');
     doc.setFontSize(9);
     doc.setTextColor(82,96,122);
-    const lines = (opts.detailLines || []).filter(Boolean);
     lines.forEach((line, i) => {
-      doc.text(line, textX, y + 21 + i*12);
+      doc.text(line, textX, firstDetailY + i*12);
     });
 
-    // Right-aligned date
-    doc.setFontSize(9);
+    // Date sits at the same baseline as the org name, right-aligned — stays anchored to the
+    // top of the block regardless of how many detail lines follow, rather than floating
+    doc.setFontSize(8.5);
     doc.setTextColor(82,96,122);
     const dateStr = 'Generated ' + new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'});
-    doc.text(dateStr, PAGE_W - MARGIN, y + 8, { align:'right' });
+    doc.text(dateStr, PAGE_W - MARGIN, nameBaselineY, { align:'right' });
 
-    // Header block grows with however many detail lines exist (min height covers 2 lines worth)
-    const linesHeight = Math.max(lines.length, 2) * 12 + 10;
-    y += 14 + linesHeight;
+    let y = Math.max(blockBottom + 16, blockTop + 44);
     doc.setDrawColor(226,221,208);
     doc.setLineWidth(1);
     doc.line(MARGIN, y, PAGE_W - MARGIN, y);
-    y += 22;
+    y += 24;
 
     doc.setFont('times','bold');
     doc.setFontSize(16);
     doc.setTextColor(28,42,63);
-    doc.text(opts.title, MARGIN, y);
+    doc.text(opts.title, PAGE_W / 2, y, { align:'center' });
     y += 10;
+
+    if(opts.subtitle){
+      y += 14;
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(10);
+      doc.setTextColor(28,125,118); // teal accent — distinguishes the scope label from the main title
+      doc.text(opts.subtitle, PAGE_W / 2, y, { align:'center' });
+    }
 
     return y + 14;
   }
@@ -109,6 +124,40 @@
       doc.setPage(i);
       drawFooter(doc, i, total, watermark);
     }
+  }
+
+  /* ---------------- Chart image embed ---------------- */
+  // Captures a live Chart.js canvas as a PNG and places it in the PDF, preserving its aspect
+  // ratio. Adds a new page first if there isn't enough room left on the current one.
+  function drawChartImage(doc, startY, canvasId, label){
+    const canvas = document.getElementById(canvasId);
+    if(!canvas || !canvas.width || !canvas.height) return startY;
+
+    let dataUrl;
+    try{ dataUrl = canvas.toDataURL('image/png', 1.0); }
+    catch(e){ return startY; } // canvas tainted or unsupported — skip silently rather than break the PDF
+
+    const maxW = PAGE_W - 2*MARGIN;
+    const aspect = canvas.height / canvas.width;
+    const imgW = maxW;
+    const imgH = imgW * aspect;
+    const labelH = 22;
+    const pageH = doc.internal.pageSize.getHeight();
+
+    let y = startY + 24;
+    if(y + labelH + imgH > pageH - 60){
+      doc.addPage();
+      y = MARGIN;
+    }
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11);
+    doc.setTextColor(28,42,63);
+    doc.text(label, MARGIN, y + 12);
+    y += labelH;
+
+    try{ doc.addImage(dataUrl, 'PNG', MARGIN, y, imgW, imgH); }catch(e){ return y; }
+    return y + imgH;
   }
 
   /* ---------------- Signature / sign-off block ---------------- */
@@ -164,9 +213,41 @@
     if(typeof students === 'undefined' || !students.length){ alert('Add students first.'); return; }
     if(typeof lastExamRows === 'undefined' || !lastExamRows.length){ alert('Nothing to export yet.'); return; }
 
+    const decimalsEl = document.getElementById('examPdfDecimals');
+    const decimals = decimalsEl ? parseInt(decimalsEl.value, 10) : 1;
+    const includeChartChecked = document.getElementById('examPdfIncludeChart')?.checked ?? true;
+
+    const cutoffEl = document.getElementById('examCutoff');
+    const cutoffRaw = cutoffEl ? cutoffEl.value.trim() : '';
+    const hasCutoff = cutoffRaw !== '' && !isNaN(parseFloat(cutoffRaw));
+    const cutoff = hasCutoff ? parseFloat(cutoffRaw) : null;
+    const scope = hasCutoff ? (document.getElementById('examPdfScope')?.value || 'all') : 'all';
+
     const doc = newDoc();
-    const scores = students.map(s=>s.score);
-    const sorted = [...lastExamRows].sort((a,b)=>a.rank-b.rank);
+    const sortedAll = [...lastExamRows].sort((a,b)=>a.rank-b.rank);
+
+    // Apply Pass/Fail scope filtering. Pass = score >= cutoff (per the agreed boundary rule).
+    let sorted = sortedAll;
+    let scopeLabel = null;
+    if(scope === 'pass'){
+      sorted = sortedAll.filter(r => r.score >= cutoff);
+      scopeLabel = `Pass List — score ≥ ${cutoff}`;
+    } else if(scope === 'fail'){
+      sorted = sortedAll.filter(r => r.score < cutoff);
+      scopeLabel = `Fail List — score < ${cutoff}`;
+    }
+
+    if(scope !== 'all' && !sorted.length){
+      alert(scope === 'pass' ? 'No students meet the pass mark — nothing to print.' : 'No students are below the pass mark — nothing to print.');
+      return;
+    }
+
+    // The on-screen histogram reflects the WHOLE class, not a filtered subset. Showing it
+    // unmodified under a "Pass List" or "Fail List" heading would misrepresent the data, so
+    // the chart is only ever included when printing the full, unscoped list.
+    const includeChart = includeChartChecked && scope === 'all';
+
+    const scores = sorted.map(r=>r.score);
 
     let y = drawHeader(doc, {
       orgName: branding.examOrgName || 'CentileIQ',
@@ -177,17 +258,18 @@
         [branding.examPhone, branding.examEmail].filter(Boolean).join('  ·  ') || null
       ],
       title: 'Examination Ranking Report',
+      subtitle: scopeLabel,
       logoDataUrl: branding.logoDataUrl
     });
 
-    // Summary stat strip
-    const statLabels = ['Students','Mean','Median','Std. dev.','Range'];
+    // Summary stat strip — describes whichever set (all/pass/fail) is actually being printed
+    const statLabels = scope==='all' ? ['Students','Mean','Median','Std. dev.','Range'] : ['Students','Mean','Median','Std. dev.','Cut-off'];
     const statValues = [
       String(scores.length),
       mean(scores).toFixed(1),
       median(scores).toFixed(1),
       stddev(scores).toFixed(1),
-      `${Math.min(...scores)}–${Math.max(...scores)}`
+      scope==='all' ? `${Math.min(...scores)}–${Math.max(...scores)}` : String(cutoff)
     ];
     const colW = (PAGE_W - 2*MARGIN) / statLabels.length;
     doc.setFont('helvetica','normal');
@@ -204,23 +286,41 @@
     });
     y += 36;
 
+    // Column definitions: each knows its header label, how to pull its value from a row,
+    // and its horizontal alignment — header and body always share the same alignment so
+    // headings sit centered directly above their values.
+    const ALL_EXAM_COLS = {
+      rank:       { header:'Rank',      value:r=>'#'+r.rank,                         halign:'center', width:50 },
+      name:       { header:'Name',      value:r=>r.name,                             halign:'left',   width:null },
+      score:      { header:'Score',     value:r=>`${r.score}/${r.max}`,              halign:'center', width:75 },
+      pctOfMax:   { header:'% of Max',  value:r=>r.pctOfMax.toFixed(1)+'%',          halign:'center', width:80 },
+      percentile: { header:'Percentile',value:r=>r.pct.toFixed(decimals),            halign:'center', width:80 }
+    };
+    const checkedCols = Array.from(document.querySelectorAll('.examColCheck:checked')).map(el=>el.value);
+    const colKeys = Object.keys(ALL_EXAM_COLS).filter(k => k==='rank' || k==='name' || checkedCols.includes(k));
+    const cols = colKeys.map(k => ALL_EXAM_COLS[k]);
+
+    const columnStyles = {};
+    cols.forEach((c,i) => { if(c.width) columnStyles[i] = { cellWidth:c.width, halign:c.halign }; else columnStyles[i] = { halign:c.halign }; });
+
     doc.autoTable({
       startY: y,
       margin: { left: MARGIN, right: MARGIN },
-      head: [['Rank','Name','Score','% of Max','Percentile']],
-      body: sorted.map(r=>[
-        '#'+r.rank, r.name, `${r.score}/${r.max}`, r.pctOfMax.toFixed(1)+'%', r.pct.toFixed(1)
-      ]),
-      styles:{ font:'helvetica', fontSize:9.5, textColor:[28,42,63], cellPadding:6, lineColor:[226,221,208], lineWidth:0.5 },
-      headStyles:{ fillColor:[28,42,63], textColor:[255,255,255], fontStyle:'bold', fontSize:8.5 },
+      head: [cols.map(c=>c.header)],
+      body: sorted.map(r => cols.map(c => c.value(r))),
+      styles:{ font:'helvetica', fontSize:9.5, textColor:[28,42,63], cellPadding:6, lineColor:[226,221,208], lineWidth:0.5, valign:'middle' },
+      headStyles:{ fillColor:[28,42,63], textColor:[255,255,255], fontStyle:'bold', fontSize:8.5, halign:'center' },
       alternateRowStyles:{ fillColor:[251,250,247] },
-      columnStyles:{
-        0:{ cellWidth:50 }, 2:{ halign:'right', cellWidth:70 },
-        3:{ halign:'right', cellWidth:80 }, 4:{ halign:'right', cellWidth:80 }
-      }
+      columnStyles
     });
 
     let afterTableY = doc.lastAutoTable.finalY;
+
+    // Optional score-distribution chart, captured from the live on-screen canvas
+    if(includeChart){
+      afterTableY = drawChartImage(doc, afterTableY, 'distChart', 'Score Distribution');
+    }
+
     drawSignatureBlock(doc, afterTableY, {
       signerName: branding.examSignerName,
       signerTitle: branding.examSignerTitle,
@@ -229,7 +329,8 @@
     });
 
     finalizeFooters(doc, !proActive());
-    doc.save('exam_ranking_report.pdf');
+    const filenameSuffix = scope==='pass' ? '_pass_list' : scope==='fail' ? '_fail_list' : '';
+    doc.save(`exam_ranking_report${filenameSuffix}.pdf`);
   }
 
   /* ---------------- Growth Screening PDF ---------------- */
@@ -248,28 +349,37 @@
       logoDataUrl: branding.logoDataUrl
     });
 
+    // Column definitions: header and body share the same alignment so headings sit
+    // centered directly above their values, matching the exam report's pattern.
+    const ALL_GROWTH_COLS = {
+      name:        { header:'Name',         value:e=>e.name || '—',                                          halign:'left',   width:null },
+      sex:         { header:'Sex',          value:e=>e.sex==='boy'?'Boy':'Girl',                              halign:'center', width:42 },
+      age:         { header:'Age / Length', value:e=>e.months!=null ? formatAge(e.months) : `${e.lengthCm} cm`, halign:'center', width:70 },
+      measurement: { header:'Measurement',  value:e=>INDICATOR_LABEL[e.indicator],                            halign:'left',   width:null },
+      value:       { header:'Value',        value:e=>`${e.value} ${VALUE_UNIT[e.indicator]}`,                 halign:'center', width:64 },
+      z:           { header:'Z-score',      value:e=>e.z.toFixed(2),                                          halign:'center', width:54 },
+      centile:     { header:'Centile',      value:e=>centileBand(e.pct),                                      halign:'center', width:64 },
+      flag:        { header:'Flag',         value:e=>e.cls.label,                                             halign:'center', width:64 }
+    };
+    const checkedGrowthCols = Array.from(document.querySelectorAll('.growthColCheck:checked')).map(el=>el.value);
+    const growthColKeys = Object.keys(ALL_GROWTH_COLS).filter(k => k==='name' || checkedGrowthCols.includes(k));
+    const growthCols = growthColKeys.map(k => ALL_GROWTH_COLS[k]);
+    const flagColIndex = growthColKeys.indexOf('flag');
+
+    const growthColumnStyles = {};
+    growthCols.forEach((c,i) => { growthColumnStyles[i] = c.width ? { cellWidth:c.width, halign:c.halign } : { halign:c.halign }; });
+
     doc.autoTable({
       startY: y,
       margin: { left: MARGIN, right: MARGIN },
-      head: [['Name','Sex','Age / Length','Measurement','Value','Z-score','Centile','Flag']],
-      body: growthEntries.map(e=>{
-        const ageOrLength = e.months!=null ? formatAge(e.months) : `${e.lengthCm} cm`;
-        return [
-          e.name || '—',
-          e.sex==='boy'?'Boy':'Girl',
-          ageOrLength,
-          INDICATOR_LABEL[e.indicator],
-          `${e.value} ${VALUE_UNIT[e.indicator]}`,
-          e.z.toFixed(2),
-          centileBand(e.pct),
-          e.cls.label
-        ];
-      }),
-      styles:{ font:'helvetica', fontSize:8.5, textColor:[28,42,63], cellPadding:5.5, lineColor:[226,221,208], lineWidth:0.5 },
-      headStyles:{ fillColor:[28,42,63], textColor:[255,255,255], fontStyle:'bold', fontSize:7.5 },
+      head: [growthCols.map(c=>c.header)],
+      body: growthEntries.map(e => growthCols.map(c => c.value(e))),
+      styles:{ font:'helvetica', fontSize:8.5, textColor:[28,42,63], cellPadding:5.5, lineColor:[226,221,208], lineWidth:0.5, valign:'middle' },
+      headStyles:{ fillColor:[28,42,63], textColor:[255,255,255], fontStyle:'bold', fontSize:7.5, halign:'center' },
       alternateRowStyles:{ fillColor:[251,250,247] },
+      columnStyles: growthColumnStyles,
       didParseCell: function(data){
-        if(data.section === 'body' && data.column.index === 7){
+        if(flagColIndex>-1 && data.section === 'body' && data.column.index === flagColIndex){
           const flag = data.cell.raw;
           if(/flag/i.test(flag)) { data.cell.styles.textColor = [181,69,61]; data.cell.styles.fontStyle='bold'; }
           else if(/watch/i.test(flag)) { data.cell.styles.textColor = [207,122,49]; data.cell.styles.fontStyle='bold'; }
@@ -283,13 +393,14 @@
     // Always-included safety disclaimer — not gated by tier
     const disclaimer = 'Screening tool, not a diagnosis. Percentiles are calculated from WHO Child Growth Standards (0-5y) and WHO Growth Reference (5-19y) median and spread values, sampled at standard checkpoint ages and interpolated between them. For clinical decisions, confirm against official WHO charts or a healthcare provider.';
     doc.setFillColor(251,236,219);
-    const boxLines = doc.splitTextToSize(disclaimer, PAGE_W - 2*MARGIN - 20);
+    const disclaimerWidth = PAGE_W - 2*MARGIN - 20;
+    const boxLines = doc.splitTextToSize(disclaimer, disclaimerWidth);
     const boxH = boxLines.length * 11 + 16;
     doc.roundedRect(MARGIN, afterTableY, PAGE_W - 2*MARGIN, boxH, 4, 4, 'F');
     doc.setFont('helvetica','normal');
     doc.setFontSize(8);
     doc.setTextColor(138,83,24);
-    doc.text(boxLines, MARGIN + 10, afterTableY + 14);
+    doc.text(boxLines, MARGIN + 10, afterTableY + 14, { align:'justify', maxWidth: disclaimerWidth });
 
     const afterDisclaimerY = afterTableY + boxH;
     drawSignatureBlock(doc, afterDisclaimerY, {
@@ -391,6 +502,32 @@
     document.getElementById('brandLogoInput')?.addEventListener('change', e => handleImageUpload(e.target.files[0], 'logoDataUrl', 'brandLogoPreview'));
     document.getElementById('brandSignatureInput')?.addEventListener('change', e => handleImageUpload(e.target.files[0], 'signatureDataUrl', 'brandSignaturePreview'));
     document.getElementById('brandStampInput')?.addEventListener('change', e => handleImageUpload(e.target.files[0], 'stampDataUrl', 'brandStampPreview'));
+
+    const cutoffInput = document.getElementById('examCutoff');
+    const scopeSelect = document.getElementById('examPdfScope');
+    const cutoffHint = document.getElementById('cutoffHint');
+    function syncCutoffState(){
+      if(!cutoffInput || !scopeSelect || !cutoffHint) return;
+      const has = cutoffInput.value.trim() !== '' && !isNaN(parseFloat(cutoffInput.value));
+      scopeSelect.disabled = !has;
+      if(!has){
+        scopeSelect.value = 'all';
+        cutoffHint.textContent = 'Set a cut-off to enable Pass/Fail list scopes.';
+      } else {
+        cutoffHint.textContent = `Pass = score ≥ ${parseFloat(cutoffInput.value)}.`;
+      }
+    }
+    cutoffInput?.addEventListener('input', syncCutoffState);
+    syncCutoffState();
+
+    document.getElementById('examColsToggleBtn')?.addEventListener('click', () => {
+      const panel = document.getElementById('examColsPanel');
+      if(panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    document.getElementById('growthColsToggleBtn')?.addEventListener('click', () => {
+      const panel = document.getElementById('growthColsPanel');
+      if(panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
 
     [['logoDataUrl','brandLogoPreview'], ['signatureDataUrl','brandSignaturePreview'], ['stampDataUrl','brandStampPreview']].forEach(([key, elId])=>{
       if(branding[key]){
