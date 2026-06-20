@@ -47,64 +47,55 @@
 
   function drawHeader(doc, opts){
     // opts: { orgName, detailLines: string[], title, logoDataUrl }
+    // Centered letterhead layout: logo (if any) sits above the org name, and everything —
+    // name, contact details, title — is centered on the page width.
     const lines = (opts.detailLines || []).filter(Boolean);
-    const lineCount = Math.max(lines.length, 1); // at least 1 line of vertical space reserved
-    const blockTop = MARGIN;
-    const nameBaselineY = blockTop + 14;
-    const firstDetailY = nameBaselineY + 15;
-    const blockBottom = lines.length ? (firstDetailY + (lines.length-1)*12) : nameBaselineY;
+    const pageCenterX = PAGE_W / 2;
+    let y = MARGIN;
 
-    // Logo vertically centered against the full name+details text block
     if(opts.logoDataUrl){
-      const logoSize = 36;
-      const blockCenterY = (nameBaselineY - 9 + blockBottom + 3) / 2;
-      try{ doc.addImage(opts.logoDataUrl, 'PNG', MARGIN, blockCenterY - logoSize/2, logoSize, logoSize); }catch(e){}
+      const logoSize = 38;
+      try{ doc.addImage(opts.logoDataUrl, 'PNG', pageCenterX - logoSize/2, y, logoSize, logoSize); }catch(e){}
+      y += logoSize + 10;
     }
-    const textX = opts.logoDataUrl ? MARGIN + 46 : MARGIN;
 
     doc.setFont('helvetica','bold');
-    doc.setFontSize(13);
+    doc.setFontSize(14);
     doc.setTextColor(28,42,63);
-    doc.text(opts.orgName || 'CentileIQ', textX, nameBaselineY);
+    doc.text(opts.orgName || 'CentileIQ', pageCenterX, y, { align:'center' });
+    y += 16;
 
     doc.setFont('helvetica','normal');
     doc.setFontSize(9);
     doc.setTextColor(82,96,122);
-    lines.forEach((line, i) => {
-      doc.text(line, textX, firstDetailY + i*12);
+    lines.forEach(line => {
+      doc.text(line, pageCenterX, y, { align:'center' });
+      y += 12;
     });
 
-    // Date sits at the same baseline as the org name, right-aligned — stays anchored to the
-    // top of the block regardless of how many detail lines follow, rather than floating
-    doc.setFontSize(8.5);
-    doc.setTextColor(82,96,122);
-    const dateStr = 'Generated ' + new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'});
-    doc.text(dateStr, PAGE_W - MARGIN, nameBaselineY, { align:'right' });
-
-    let y = Math.max(blockBottom + 16, blockTop + 44);
-    doc.setDrawColor(226,221,208);
-    doc.setLineWidth(1);
-    doc.line(MARGIN, y, PAGE_W - MARGIN, y);
-    y += 24;
+    y += 10;
+    // Short centered accent rule beneath the letterhead block, rather than a full-width line —
+    // reads as a deliberate divider rather than a stray ruled edge.
+    doc.setDrawColor(28,125,118);
+    doc.setLineWidth(1.5);
+    doc.line(pageCenterX - 28, y, pageCenterX + 28, y);
+    y += 22;
 
     doc.setFont('times','bold');
-    doc.setFontSize(16);
+    doc.setFontSize(17);
     doc.setTextColor(28,42,63);
-    doc.text(opts.title, PAGE_W / 2, y, { align:'center' });
-    y += 10;
+    doc.text(opts.title, pageCenterX, y, { align:'center' });
+    y += 6;
 
-    if(opts.subtitle){
-      y += 14;
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(10);
-      doc.setTextColor(28,125,118); // teal accent — distinguishes the scope label from the main title
-      doc.text(opts.subtitle, PAGE_W / 2, y, { align:'center' });
-    }
+    y += 8;
+    doc.setDrawColor(226,221,208);
+    doc.setLineWidth(0.75);
+    doc.line(MARGIN, y, PAGE_W - MARGIN, y);
 
-    return y + 14;
+    return y + 22;
   }
 
-  function drawFooter(doc, pageNum, totalPages, watermark){
+  function drawFooter(doc, pageNum, totalPages, watermark, generatedStr){
     const h = doc.internal.pageSize.getHeight();
     doc.setDrawColor(226,221,208);
     doc.setLineWidth(0.75);
@@ -112,17 +103,21 @@
     doc.setFont('helvetica','normal');
     doc.setFontSize(8);
     doc.setTextColor(154,163,181);
-    if(watermark){
-      doc.text('Generated with CentileIQ — centileiq app', MARGIN, h - 26);
-    }
+    const leftText = watermark ? 'Generated with CentileIQ — centileiq app' : null;
+    if(leftText) doc.text(leftText, MARGIN, h - 26);
+    // Generated date+time sits centered in the footer, independent of the watermark/page-count text
+    doc.text(generatedStr, PAGE_W / 2, h - 26, { align:'center' });
     doc.text(`Page ${pageNum} of ${totalPages}`, PAGE_W - MARGIN, h - 26, { align:'right' });
   }
 
   function finalizeFooters(doc, watermark){
     const total = doc.internal.getNumberOfPages();
+    const now = new Date();
+    const generatedStr = 'Generated ' + now.toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'}) +
+      ' at ' + now.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
     for(let i=1;i<=total;i++){
       doc.setPage(i);
-      drawFooter(doc, i, total, watermark);
+      drawFooter(doc, i, total, watermark, generatedStr);
     }
   }
 
@@ -228,13 +223,10 @@
 
     // Apply Pass/Fail scope filtering. Pass = score >= cutoff (per the agreed boundary rule).
     let sorted = sortedAll;
-    let scopeLabel = null;
     if(scope === 'pass'){
       sorted = sortedAll.filter(r => r.score >= cutoff);
-      scopeLabel = `Pass List — score ≥ ${cutoff}`;
     } else if(scope === 'fail'){
       sorted = sortedAll.filter(r => r.score < cutoff);
-      scopeLabel = `Fail List — score < ${cutoff}`;
     }
 
     if(scope !== 'all' && !sorted.length){
@@ -255,10 +247,9 @@
         branding.examClassName ? `Class: ${branding.examClassName}` : null,
         branding.examTeacherName ? `Teacher: ${branding.examTeacherName}` : null,
         branding.examAddress || null,
-        [branding.examPhone, branding.examEmail].filter(Boolean).join('  ·  ') || null
+        [branding.examPhone ? `Tel: ${branding.examPhone}` : null, branding.examEmail ? `Email: ${branding.examEmail}` : null].filter(Boolean).join('   ·   ') || null
       ],
       title: 'Examination Ranking Report',
-      subtitle: scopeLabel,
       logoDataUrl: branding.logoDataUrl
     });
 
@@ -343,7 +334,7 @@
       detailLines: [
         branding.growthProviderName ? `Provider: ${branding.growthProviderName}` : null,
         branding.growthAddress || null,
-        [branding.growthPhone, branding.growthEmail].filter(Boolean).join('  ·  ') || null
+        [branding.growthPhone ? `Tel: ${branding.growthPhone}` : null, branding.growthEmail ? `Email: ${branding.growthEmail}` : null].filter(Boolean).join('   ·   ') || null
       ],
       title: 'Growth Screening Report',
       logoDataUrl: branding.logoDataUrl
@@ -392,15 +383,33 @@
 
     // Always-included safety disclaimer — not gated by tier
     const disclaimer = 'Screening tool, not a diagnosis. Percentiles are calculated from WHO Child Growth Standards (0-5y) and WHO Growth Reference (5-19y) median and spread values, sampled at standard checkpoint ages and interpolated between them. For clinical decisions, confirm against official WHO charts or a healthcare provider.';
-    doc.setFillColor(251,236,219);
     const disclaimerWidth = PAGE_W - 2*MARGIN - 20;
-    const boxLines = doc.splitTextToSize(disclaimer, disclaimerWidth);
-    const boxH = boxLines.length * 11 + 16;
-    doc.roundedRect(MARGIN, afterTableY, PAGE_W - 2*MARGIN, boxH, 4, 4, 'F');
-    doc.setFont('helvetica','normal');
+    doc.setFont('helvetica','bold');
     doc.setFontSize(8);
+    const leadIn = 'Note: ';
+    const leadInW = doc.getTextWidth(leadIn);
+    doc.setFont('helvetica','normal');
+    // Wrap narrow enough that, once "Note: " is prepended to line 1, it still fits the box width
+    const boxLines = doc.splitTextToSize(disclaimer, disclaimerWidth - leadInW);
+    const lineGap = 11.5;
+    const boxH = boxLines.length * lineGap + 18;
+
+    doc.setFillColor(251,236,219);
+    doc.setDrawColor(239,211,172);
+    doc.setLineWidth(0.75);
+    doc.roundedRect(MARGIN, afterTableY, PAGE_W - 2*MARGIN, boxH, 4, 4, 'FD');
+
     doc.setTextColor(138,83,24);
-    doc.text(boxLines, MARGIN + 10, afterTableY + 14, { align:'justify', maxWidth: disclaimerWidth });
+    boxLines.forEach((line, i) => {
+      if(i === 0){
+        doc.setFont('helvetica','bold');
+        doc.text(leadIn, MARGIN + 10, afterTableY + 15);
+        doc.setFont('helvetica','normal');
+        doc.text(line, MARGIN + 10 + leadInW, afterTableY + 15);
+      } else {
+        doc.text(line, MARGIN + 10, afterTableY + 15 + i*lineGap);
+      }
+    });
 
     const afterDisclaimerY = afterTableY + boxH;
     drawSignatureBlock(doc, afterDisclaimerY, {
