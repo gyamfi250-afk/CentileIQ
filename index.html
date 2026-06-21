@@ -32,6 +32,8 @@
 
 <div class="app">
 
+  <div class="print-watermark">CentileIQ</div>
+
   <div class="accent-bar"></div>
   <div class="masthead">
     <div class="masthead-top-row">
@@ -148,7 +150,7 @@
         </label>
         <button class="ghost col-toggle-btn" id="examColsToggleBtn" type="button">☰ Columns</button>
       </div>
-      <div class="col-picker" id="examColsPanel" style="display:none;">
+      <div class="col-picker no-print" id="examColsPanel" style="display:none;">
         <p class="sub" style="margin:0 0 8px;">Choose which columns appear in the PDF.</p>
         <div class="col-picker-grid">
           <label class="checkbox-field"><input type="checkbox" class="examColCheck" value="rank" checked disabled><span>Rank</span></label>
@@ -252,7 +254,6 @@
     </div>
 
     <div class="empty" id="examEmpty"><span class="empty-icon">📊</span>No students yet — upload a file, paste a list, or add one above to see rankings and the score distribution.</div>
-    <p class="print-watermark">Generated with CentileIQ — centileiq.app</p>
   </section>
 
   <!-- ============================================================ -->
@@ -346,7 +347,7 @@
       <div class="card-row no-print pdf-options-row">
         <button class="ghost col-toggle-btn" id="growthColsToggleBtn" type="button">☰ Columns</button>
       </div>
-      <div class="col-picker" id="growthColsPanel" style="display:none;">
+      <div class="col-picker no-print" id="growthColsPanel" style="display:none;">
         <p class="sub" style="margin:0 0 8px;">Choose which columns appear in the PDF.</p>
         <div class="col-picker-grid">
           <label class="checkbox-field"><input type="checkbox" class="growthColCheck" value="name" checked disabled><span>Name</span></label>
@@ -392,7 +393,6 @@
     </div>
 
     <div class="empty" id="growthEmpty"><span class="empty-icon">📏</span>No measurements yet — fill in the form above to screen a child's growth.</div>
-    <p class="print-watermark">Generated with CentileIQ — centileiq.app</p>
   </section>
 
   <footer class="app-footer">
