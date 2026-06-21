@@ -1026,6 +1026,28 @@
     });
     refreshProBadge();
 
+    // ---- Auto-fill license key from URL ----
+    // Lemon Squeezy's receipt email button can link to
+    // https://centileiq.app/?license_key=[license_key], with [license_key] replaced by the
+    // real key at purchase time. If that param is present, open the modal with the key
+    // already filled in and offer to verify immediately — saves the buyer from having to
+    // copy/paste it manually out of their email.
+    (function autoFillLicenseFromUrl(){
+      const params = new URLSearchParams(window.location.search);
+      const keyFromUrl = params.get('license_key');
+      if(!keyFromUrl) return;
+      if(proActive()) return; // already unlocked on this browser, nothing to do
+
+      openLicenseModal();
+      const keyInput = document.getElementById('licenseKeyInput');
+      if(keyInput) keyInput.value = keyFromUrl.trim();
+
+      // Clean the key out of the visible URL/browser history once read, so it isn't left
+      // sitting in the address bar or accidentally re-shared via a bookmark/copied link.
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    })();
+
     // ---- Free-tier record cap enforcement ----
     // These listeners run in the CAPTURING phase, i.e. before app.js's own (bubbling-phase)
     // click handlers fire, so a blocked action never reaches app.js's logic at all. For
