@@ -243,10 +243,23 @@ thead th{position:sticky; top:0; z-index:2;}
   tbody tr{break-inside:avoid;}
   .table-wrap{max-height:none !important; overflow:visible !important; border:none;}
   .app{max-width:100%;}
+
+  /* Diagonal watermark, repeats on every printed page via position:fixed (per the CSS Paged
+     Media spec — fixed-position elements are repeated on each page when printing). Hidden
+     entirely once a Pro license is active. */
   .print-watermark{display:none;}
   body:not(.pro-active) .print-watermark{
-    display:block; text-align:center; font-size:11px; color:#9aa3b5;
-    margin-top:14px; padding-top:10px; border-top:1px solid #ddd;
+    display:block;
+    position:fixed;
+    top:50%; left:50%;
+    transform:translate(-50%,-50%) rotate(-38deg);
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:90px;
+    color:rgba(28,42,63,0.09);
+    white-space:nowrap;
+    pointer-events:none;
+    z-index:1000;
   }
 }
 .print-watermark{display:none;}
