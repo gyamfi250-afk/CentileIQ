@@ -683,8 +683,47 @@
     return loadLicenseState().active;
   }
 
+  /* ---------------- Free-tier record cap (15 per tab) ----------------
+     Free accounts are capped at 15 students (exam) and 15 entries (growth), counted
+     separately per tab. Enforced at the point of entry (button clicks) rather than by
+     truncating app.js's own render/state logic, so app.js itself stays untouched.
+  */
+  const FREE_RECORD_CAP = 15;
+
+  function showUpgradePrompt(message){
+    alert(message + '\n\nUpgrade to CentileIQ Pro ($14.99, one-time) for unlimited records.');
+    openLicenseModal();
+  }
+
+  // Blocks a single-add action outright once the cap is reached. Returns true if the
+  // action should be blocked (caller should stop), false if it's safe to proceed.
+  function blockIfAtCap(currentCount, label){
+    if(proActive()) return false;
+    if(currentCount >= FREE_RECORD_CAP){
+      showUpgradePrompt(`The free version of CentileIQ is limited to ${FREE_RECORD_CAP} ${label}. You're already at the limit.`);
+      return true;
+    }
+    return false;
+  }
+
+  // For bulk-style additions (paste, file import) where many rows arrive at once: returns
+  // how many of the incoming rows can actually be accepted without exceeding the cap.
+  // Pro accounts get Infinity (no truncation).
+  function allowedAdditions(currentCount, incomingCount, label){
+    if(proActive()) return incomingCount;
+    const room = Math.max(0, FREE_RECORD_CAP - currentCount);
+    if(incomingCount > room){
+      showUpgradePrompt(`The free version of CentileIQ is limited to ${FREE_RECORD_CAP} ${label}. Only the first ${room} of ${incomingCount} new row(s) were added.`);
+    }
+    return room;
+  }
+
   /* ---------------- Branding modal ---------------- */
   function openBrandingModal(kind){
+    if(!proActive()){
+      showUpgradePrompt('Custom report headers (logo, signature, stamp, institution details) are a Pro feature.');
+      return;
+    }
     const modal = document.getElementById('brandingModal');
     const isExam = kind === 'exam';
     document.getElementById('brandingModalTitle').textContent = isExam ? 'Report header — Exam' : 'Report header — Growth';
@@ -756,8 +795,11 @@
   /* ---------------- Pro license modal UI ---------------- */
   function refreshProBadge(){
     const btn = document.getElementById('proStatusBtn');
-    if(!btn) return;
     const active = proActive();
+    // Drives the print-only watermark CSS rule (body:not(.pro-active) .print-watermark),
+    // kept in sync here alongside the badge since both reflect the same license state.
+    document.body.classList.toggle('pro-active', active);
+    if(!btn) return;
     btn.textContent = active ? '✓ Pro' : 'Unlock Pro';
     btn.classList.toggle('is-active', active);
   }
@@ -964,6 +1006,58 @@
       if(e.key === 'Enter') handleVerifyClick();
     });
     refreshProBadge();
+
+    // ---- Free-tier record cap enforcement ----
+    // These listeners run in the CAPTURING phase, i.e. before app.js's own (bubbling-phase)
+    // click handlers fire, so a blocked action never reaches app.js's logic at all. For
+    // single-record adds, the click is stopped outright once at the cap. For bulk-style
+    // additions (paste, file import), the incoming data is pre-truncated so app.js only
+    // ever sees the rows that are actually allowed through.
+
+    document.getElementById('addStudentBtn')?.addEventListener('click', function(e){
+      if(typeof students !== 'undefined' && blockIfAtCap(students.length, 'students')){
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+    }, true);
+
+    document.getElementById('addGrowthBtn')?.addEventListener('click', function(e){
+      if(typeof growthEntries !== 'undefined' && blockIfAtCap(growthEntries.length, 'growth entries')){
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+    }, true);
+
+    document.getElementById('bulkAddBtn')?.addEventListener('click', function(e){
+      if(typeof students === 'undefined') return;
+      const textarea = document.getElementById('bulkPasteArea');
+      if(!textarea) return;
+      const lines = textarea.value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+      const allowed = allowedAdditions(students.length, lines.length, 'students');
+      if(allowed < lines.length){
+        // Truncate the textarea content to only the rows that fit, so app.js's own
+        // bulkAddBtn handler (which reads this same textarea) only processes those.
+        textarea.value = lines.slice(0, allowed).join('\n');
+        if(allowed === 0){
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }
+      }
+    }, true);
+
+    document.getElementById('importBtn')?.addEventListener('click', function(e){
+      if(typeof students === 'undefined' || typeof parsedRows === 'undefined' || !parsedRows) return;
+      // File import REPLACES the roster in app.js (students = fresh), rather than appending,
+      // so the cap applies to the size of the imported file itself, not existing + incoming.
+      const allowed = allowedAdditions(0, parsedRows.length, 'students');
+      if(allowed < parsedRows.length){
+        parsedRows = parsedRows.slice(0, allowed);
+        if(allowed === 0){
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }
+      }
+    }, true);
   });
 
 })();
