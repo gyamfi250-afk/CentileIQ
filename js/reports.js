@@ -432,6 +432,8 @@
 
     const scores = sorted.map(r=>r.score);
 
+    const scopeBracket = scope === 'pass' ? ' (Pass List)' : scope === 'fail' ? ' (Fail List)' : '';
+
     let y = drawHeader(doc, {
       orgName: branding.examOrgName || 'CentileIQ',
       detailLines: [
@@ -440,18 +442,20 @@
         branding.examAddress || null,
         [branding.examPhone ? `Tel: ${branding.examPhone}` : null, branding.examEmail ? `Email: ${branding.examEmail}` : null].filter(Boolean).join('   ·   ') || null
       ],
-      title: 'Examination Ranking Report',
+      title: `Examination Ranking Report${scopeBracket}`,
       logoDataUrl: branding.logoDataUrl
     });
 
-    // Summary stat strip — describes whichever set (all/pass/fail) is actually being printed
-    const statLabels = scope==='all' ? ['Students','Mean','Median','Std. dev.','Range'] : ['Students','Mean','Median','Std. dev.','Cut-off'];
+    // Summary stat strip — same five columns (Students/Mean/Median/Std. dev./Range) regardless
+    // of scope, so a Pass-list or Fail-list printout looks structurally identical to the full
+    // report; only the underlying numbers differ, reflecting whichever group is being shown.
+    const statLabels = ['Students','Mean','Median','Std. dev.','Range'];
     const statValues = [
       String(scores.length),
       mean(scores).toFixed(1),
       median(scores).toFixed(1),
       stddev(scores).toFixed(1),
-      scope==='all' ? `${Math.min(...scores)}–${Math.max(...scores)}` : String(cutoff)
+      `${Math.min(...scores)}–${Math.max(...scores)}`
     ];
     const colW = (PAGE_W - 2*MARGIN) / statLabels.length;
     doc.setFont('helvetica','normal');
@@ -567,9 +571,14 @@
       columnStyles: growthColumnStyles,
       didParseCell: function(data){
         if(flagColIndex>-1 && data.section === 'body' && data.column.index === flagColIndex){
-          const flag = data.cell.raw;
-          if(/flag/i.test(flag)) { data.cell.styles.textColor = [181,69,61]; data.cell.styles.fontStyle='bold'; }
-          else if(/watch/i.test(flag)) { data.cell.styles.textColor = [207,122,49]; data.cell.styles.fontStyle='bold'; }
+          // Color by the entry's actual severity level (cls.level: 'flag'/'watch'/'normal'),
+          // not by matching words in the displayed label — most labels (e.g. "Stunted",
+          // "Overweight/Obese") never literally contain the words "flag" or "watch", so
+          // text-matching silently failed to color anything but the green/normal case.
+          const entry = growthEntries[data.row.index];
+          const level = entry?.cls?.level;
+          if(level === 'flag') { data.cell.styles.textColor = [181,69,61]; data.cell.styles.fontStyle='bold'; }
+          else if(level === 'watch') { data.cell.styles.textColor = [207,122,49]; data.cell.styles.fontStyle='bold'; }
           else { data.cell.styles.textColor = [79,122,69]; }
         }
       }
