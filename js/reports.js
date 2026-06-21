@@ -203,6 +203,22 @@
     return y + 22;
   }
 
+  function drawDiagonalWatermark(doc){
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    doc.saveGraphicsState();
+    // Real alpha transparency (not just a pale color) so the watermark visually blends with
+    // whatever's underneath — table cell backgrounds are fully opaque fills, so a light
+    // *color* alone would still sit fully opaque on top of them; true opacity is what
+    // actually lets the table content show through.
+    doc.setGState(new doc.GState({ opacity: 0.06 }));
+    doc.setFont('times','bold');
+    doc.setFontSize(80);
+    doc.setTextColor(28,42,63);
+    doc.text('CentileIQ', pageW / 2, pageH / 2, { align:'center', angle:38 });
+    doc.restoreGraphicsState();
+  }
+
   function drawFooter(doc, pageNum, totalPages, watermark, generatedStr){
     const h = doc.internal.pageSize.getHeight();
     doc.setDrawColor(226,221,208);
@@ -225,6 +241,9 @@
       ' at ' + now.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
     for(let i=1;i<=total;i++){
       doc.setPage(i);
+      // Diagonal watermark drawn FIRST so it sits visually behind the footer text/rule
+      // line drawn after it on the same page.
+      if(watermark) drawDiagonalWatermark(doc);
       drawFooter(doc, i, total, watermark, generatedStr);
     }
   }
