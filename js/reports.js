@@ -9,6 +9,53 @@
 
 (function(){
 
+  /* ---------------- Pro licensing ----------------
+     LICENSE_PROXY_URL points at the Cloudflare Worker that verifies a license key
+     against Lemon Squeezy server-to-server (the License API can't be called reliably
+     directly from browser JS due to CORS — see the Worker's own comments for why).
+     PASTE YOUR DEPLOYED WORKER URL HERE before this feature will work.
+  */
+  const LICENSE_PROXY_URL = 'https://centileiq-license.gyamfi250.workers.dev';
+
+  const LICENSE_KEY_STORAGE = 'centileiq_license_key';
+  const LICENSE_EMAIL_STORAGE = 'centileiq_license_email';
+
+  function loadLicenseState(){
+    return {
+      active: localStorage.getItem('centileiq_pro') === 'true',
+      key: localStorage.getItem(LICENSE_KEY_STORAGE) || null,
+      email: localStorage.getItem(LICENSE_EMAIL_STORAGE) || null
+    };
+  }
+
+  function setLicenseActive(key, email){
+    localStorage.setItem('centileiq_pro', 'true');
+    localStorage.setItem(LICENSE_KEY_STORAGE, key);
+    if(email) localStorage.setItem(LICENSE_EMAIL_STORAGE, email);
+  }
+
+  function clearLicense(){
+    localStorage.removeItem('centileiq_pro');
+    localStorage.removeItem(LICENSE_KEY_STORAGE);
+    localStorage.removeItem(LICENSE_EMAIL_STORAGE);
+  }
+
+  async function verifyLicenseKey(key){
+    if(LICENSE_PROXY_URL.startsWith('REPLACE_WITH')){
+      return { valid:false, error:'Licensing isn\'t fully set up yet — the verification server URL is missing. Contact support.' };
+    }
+    try{
+      const res = await fetch(LICENSE_PROXY_URL, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ license_key: key })
+      });
+      return await res.json();
+    }catch(e){
+      return { valid:false, error:'Could not reach the licensing server. Check your connection and try again.' };
+    }
+  }
+
   /* ---------------- Branding (persisted locally) ---------------- */
   const BRAND_KEY = 'centileiq_branding';
 
@@ -628,12 +675,12 @@
     doc.save('growth_screening_report.pdf');
   }
 
-  /* ---------------- Pro-tier stub ----------------
-     Wire this up to your license-check logic later (Gumroad/LemonSqueezy key validation).
+  /* ---------------- Pro-tier check ----------------
+     Reads the locally-stored license flag set by a successful verifyLicenseKey() call.
      Returning false keeps the free CentileIQ watermark on every PDF footer.
   */
   function proActive(){
-    return localStorage.getItem('centileiq_pro') === 'true';
+    return loadLicenseState().active;
   }
 
   /* ---------------- Branding modal ---------------- */
@@ -706,6 +753,82 @@
   }
 
   /* ---------------- Wire up buttons once DOM is ready ---------------- */
+  /* ---------------- Pro license modal UI ---------------- */
+  function refreshProBadge(){
+    const btn = document.getElementById('proStatusBtn');
+    if(!btn) return;
+    const active = proActive();
+    btn.textContent = active ? '✓ Pro' : 'Unlock Pro';
+    btn.classList.toggle('is-active', active);
+  }
+
+  function openLicenseModal(){
+    const modal = document.getElementById('licenseModal');
+    if(!modal) return;
+    const state = loadLicenseState();
+    const activeView = document.getElementById('licenseActiveView');
+    const entryView = document.getElementById('licenseEntryView');
+    const emailLine = document.getElementById('licenseEmailLine');
+    const statusMsg = document.getElementById('licenseStatusMsg');
+
+    if(state.active){
+      activeView.style.display = 'block';
+      entryView.style.display = 'none';
+      emailLine.textContent = state.email ? ` (${state.email})` : '';
+    } else {
+      activeView.style.display = 'none';
+      entryView.style.display = 'block';
+      if(statusMsg) statusMsg.textContent = '';
+      const keyInput = document.getElementById('licenseKeyInput');
+      if(keyInput) keyInput.value = '';
+    }
+    modal.style.display = 'flex';
+  }
+
+  function closeLicenseModal(){
+    const modal = document.getElementById('licenseModal');
+    if(modal) modal.style.display = 'none';
+  }
+
+  async function handleVerifyClick(){
+    const keyInput = document.getElementById('licenseKeyInput');
+    const statusMsg = document.getElementById('licenseStatusMsg');
+    const verifyBtn = document.getElementById('licenseVerifyBtn');
+    const key = keyInput?.value.trim();
+
+    if(!key){
+      if(statusMsg){ statusMsg.textContent = 'Enter your license key first.'; statusMsg.style.color = 'var(--rose)'; }
+      return;
+    }
+
+    if(verifyBtn){ verifyBtn.disabled = true; verifyBtn.textContent = 'Verifying…'; }
+    if(statusMsg){ statusMsg.textContent = ''; }
+
+    const result = await verifyLicenseKey(key);
+
+    if(verifyBtn){ verifyBtn.disabled = false; verifyBtn.textContent = 'Verify & Unlock'; }
+
+    if(result.valid){
+      setLicenseActive(key, result.customer_email);
+      refreshProBadge();
+      // Refresh anything on screen that depends on Pro status (PDF watermark only takes
+      // effect at the next export, so no immediate re-render is needed beyond the badge).
+      openLicenseModal(); // re-opens into the "active" view now that state has changed
+    } else {
+      if(statusMsg){
+        statusMsg.textContent = result.error || 'That license key could not be verified.';
+        statusMsg.style.color = 'var(--rose)';
+      }
+    }
+  }
+
+  function handleDeactivateClick(){
+    if(!confirm('Remove the Pro license from this browser? You can re-enter your key anytime to unlock it again.')) return;
+    clearLicense();
+    refreshProBadge();
+    openLicenseModal(); // re-opens into the "entry" view now that state has changed
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('pdfExamBtn')?.addEventListener('click', buildExamPdf);
     document.getElementById('pdfGrowthBtn')?.addEventListener('click', buildGrowthPdf);
@@ -831,6 +954,16 @@
 
     renderGradeBandsList();
     renderGradeColumn();
+
+    document.getElementById('proStatusBtn')?.addEventListener('click', openLicenseModal);
+    document.getElementById('licenseCancelBtn')?.addEventListener('click', closeLicenseModal);
+    document.getElementById('licenseCloseBtn')?.addEventListener('click', closeLicenseModal);
+    document.getElementById('licenseVerifyBtn')?.addEventListener('click', handleVerifyClick);
+    document.getElementById('licenseDeactivateBtn')?.addEventListener('click', handleDeactivateClick);
+    document.getElementById('licenseKeyInput')?.addEventListener('keydown', e => {
+      if(e.key === 'Enter') handleVerifyClick();
+    });
+    refreshProBadge();
   });
 
 })();
