@@ -185,6 +185,7 @@
           <input type="checkbox" id="examGradingEnabled">
           <span>Assign grades (adds a Grade column to the PDF)</span>
         </label>
+        <button class="ghost" id="editGradingBtn" type="button" style="display:none; padding:6px 12px; font-size:12.5px;">✎ Edit grading</button>
       </div>
 
       <div class="col-picker no-print" id="gradingPanel" style="display:none;">
@@ -199,7 +200,10 @@
         </div>
         <p class="sub" style="margin:10px 0 8px;">Grades are assigned by % of max score. Edit thresholds below if needed.</p>
         <div id="gradeBandsList" style="display:flex; flex-direction:column; gap:6px;"></div>
-        <button class="ghost" id="addGradeBandBtn" type="button" style="margin-top:10px;">+ Add band</button>
+        <div class="card-row" style="margin-top:12px; justify-content:space-between;">
+          <button class="ghost" id="addGradeBandBtn" type="button">+ Add band</button>
+          <button class="primary" id="doneGradingBtn" type="button">Done</button>
+        </div>
       </div>
 
       <div class="stats" id="examStats"></div>
@@ -221,6 +225,7 @@
               <th class="num sortable" data-sort="score">Score</th>
               <th class="num sortable" data-sort="pctOfMax">% of max</th>
               <th class="num sortable" data-sort="pct">Percentile</th>
+              <th class="num" id="gradeColHeader" style="display:none; width:64px;">Grade</th>
               <th class="no-print" style="width:36px;"></th>
             </tr>
           </thead>
