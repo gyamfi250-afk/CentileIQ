@@ -814,13 +814,16 @@
   /* ---------------- Pro license modal UI ---------------- */
   function refreshProBadge(){
     const btn = document.getElementById('proStatusBtn');
+    const pill = document.getElementById('proPillBtn');
     const active = proActive();
     // Drives the print-only watermark CSS rule (body:not(.pro-active) .print-watermark),
     // kept in sync here alongside the badge since both reflect the same license state.
     document.body.classList.toggle('pro-active', active);
-    if(!btn) return;
-    btn.textContent = active ? '✓ Pro' : 'Unlock Pro';
-    btn.classList.toggle('is-active', active);
+
+    // Active: show the small "PRO" pill attached to the app name, hide the unlock button.
+    // Inactive: show the "Unlock Pro" call-to-action, hide the pill entirely.
+    if(btn) btn.style.display = active ? 'none' : 'inline-flex';
+    if(pill) pill.style.display = active ? 'inline-flex' : 'none';
   }
 
   function openLicenseModal(){
@@ -1017,6 +1020,7 @@
     renderGradeColumn();
 
     document.getElementById('proStatusBtn')?.addEventListener('click', openLicenseModal);
+    document.getElementById('proPillBtn')?.addEventListener('click', openLicenseModal);
     document.getElementById('licenseCancelBtn')?.addEventListener('click', closeLicenseModal);
     document.getElementById('licenseCloseBtn')?.addEventListener('click', closeLicenseModal);
     document.getElementById('licenseVerifyBtn')?.addEventListener('click', handleVerifyClick);
@@ -1025,28 +1029,6 @@
       if(e.key === 'Enter') handleVerifyClick();
     });
     refreshProBadge();
-
-    // ---- Auto-fill license key from URL ----
-    // Lemon Squeezy's receipt email button can link to
-    // https://centileiq.app/?license_key=[license_key], with [license_key] replaced by the
-    // real key at purchase time. If that param is present, open the modal with the key
-    // already filled in and offer to verify immediately — saves the buyer from having to
-    // copy/paste it manually out of their email.
-    (function autoFillLicenseFromUrl(){
-      const params = new URLSearchParams(window.location.search);
-      const keyFromUrl = params.get('license_key');
-      if(!keyFromUrl) return;
-      if(proActive()) return; // already unlocked on this browser, nothing to do
-
-      openLicenseModal();
-      const keyInput = document.getElementById('licenseKeyInput');
-      if(keyInput) keyInput.value = keyFromUrl.trim();
-
-      // Clean the key out of the visible URL/browser history once read, so it isn't left
-      // sitting in the address bar or accidentally re-shared via a bookmark/copied link.
-      const cleanUrl = window.location.origin + window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl);
-    })();
 
     // ---- Free-tier record cap enforcement ----
     // These listeners run in the CAPTURING phase, i.e. before app.js's own (bubbling-phase)
