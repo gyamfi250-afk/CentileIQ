@@ -34,8 +34,13 @@
 
   <div class="accent-bar"></div>
   <div class="masthead">
-    <p class="eyebrow">Classroom Analytics · Growth Screening</p>
-    <h1>CentileIQ</h1>
+    <div class="masthead-top-row">
+      <div>
+        <p class="eyebrow">Classroom Analytics · Growth Screening</p>
+        <h1>CentileIQ</h1>
+      </div>
+      <button class="pro-badge" id="proStatusBtn" type="button">Unlock Pro</button>
+    </div>
     <p><strong>Rank scores. Track growth.</strong> Upload or enter exam results to rank students by percentile, then use the WHO-based calculator to screen a child's anthropometric measurements against age- and sex-specific growth standards.</p>
   </div>
 
@@ -462,6 +467,39 @@
     <div class="card-row" style="margin-top:18px; justify-content:flex-end;">
       <button class="ghost" id="brandingCancelBtn" type="button">Cancel</button>
       <button class="primary" id="brandingSaveBtn" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pro License Modal -->
+<div class="modal-overlay no-print" id="licenseModal">
+  <div class="modal-box">
+    <h3 id="licenseModalTitle">Unlock CentileIQ Pro</h3>
+    <p class="sub" id="licenseModalSub">Remove the watermark, save unlimited records, and get full PDF customization — one-time payment, yours forever.</p>
+
+    <div id="licenseActiveView" style="display:none;">
+      <div class="note" style="margin-top:14px;">
+        ✓ Pro is active on this browser<span id="licenseEmailLine"></span>.
+      </div>
+      <div class="card-row" style="margin-top:18px; justify-content:space-between;">
+        <button class="ghost" id="licenseDeactivateBtn" type="button" style="color:var(--rose); border-color:var(--rose-tint);">Remove license from this browser</button>
+        <button class="primary" id="licenseCloseBtn" type="button">Done</button>
+      </div>
+    </div>
+
+    <div id="licenseEntryView">
+      <a href="https://centileiq-pro.lemonsqueezy.com/checkout/buy/beea5034-59a1-4dd3-ac1f-b761abf7ff2f" target="_blank" rel="noopener" class="btn" style="display:inline-block; text-decoration:none; text-align:center; margin-top:14px;">Buy a license — $14.99</a>
+
+      <div class="field" style="margin-top:16px;">
+        <label>Already purchased? Enter your license key</label>
+        <input type="text" id="licenseKeyInput" placeholder="e.g. 38b1460a-5104-4067-a91d-77b872934d51">
+      </div>
+      <p class="sub" id="licenseStatusMsg" style="margin-top:8px; min-height:16px;"></p>
+
+      <div class="card-row" style="margin-top:14px; justify-content:flex-end;">
+        <button class="ghost" id="licenseCancelBtn" type="button">Cancel</button>
+        <button class="primary" id="licenseVerifyBtn" type="button">Verify &amp; Unlock</button>
+      </div>
     </div>
   </div>
 </div>
