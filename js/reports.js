@@ -346,6 +346,7 @@
           grading.bands = sortedNow;
           saveGrading(grading);
           renderGradeBandsList();
+          renderGradeColumn();
         });
       });
     }
@@ -362,8 +363,46 @@
     });
     grading.bands = bands;
     saveGrading(grading);
+    renderGradeColumn();
   }
 
+  /* ---------------- On-screen Grade column ----------------
+     Injects a Grade <td> into each row of the live exam table (not just the PDF) when grading
+     is enabled, by walking the already-rendered DOM rather than re-implementing app.js's row
+     template — keeps this resilient if that template changes later.
+  */
+  function renderGradeColumn(){
+    const headerCell = document.getElementById('gradeColHeader');
+    const tbody = document.getElementById('examTableBody');
+    if(!headerCell || !tbody) return;
+
+    headerCell.style.display = grading.enabled ? '' : 'none';
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    rows.forEach(row => {
+      let gradeCell = row.querySelector('.grade-cell');
+      if(!grading.enabled){
+        if(gradeCell) gradeCell.remove();
+        return;
+      }
+      // Read this row's % of max from the existing rendered cell rather than re-deriving it —
+      // the 3rd <td> (index 2) holds raw score, 4th (index 3) holds % of max.
+      const cells = row.querySelectorAll('td');
+      if(cells.length < 4) return;
+      const pctOfMaxText = cells[3].textContent.replace('%','').trim();
+      const pctOfMax = parseFloat(pctOfMaxText);
+      const grade = isNaN(pctOfMax) ? '—' : gradeFor(pctOfMax, grading.bands);
+
+      if(!gradeCell){
+        gradeCell = document.createElement('td');
+        gradeCell.className = 'num grade-cell';
+        // Insert right before the last cell (the no-print remove-button cell), so Grade
+        // lands immediately after Percentile, matching the PDF's column order.
+        row.insertBefore(gradeCell, row.lastElementChild);
+      }
+      gradeCell.textContent = grade;
+    });
+  }
 
   function buildExamPdf(){
     if(typeof students === 'undefined' || !students.length){ alert('Add students first.'); return; }
@@ -688,14 +727,16 @@
     scopeSelect?.addEventListener('change', renderScopePreview);
     syncCutoffState();
 
-    // Keep the Pass/Fail preview in sync whenever the roster itself changes (add/remove/import),
-    // not just when the cutoff or scope inputs change. renderExam is defined in app.js, loaded
-    // before this file, and is a plain top-level function — safe to wrap without editing app.js.
+    // Keep the Pass/Fail preview and the on-screen Grade column in sync whenever the roster
+    // itself changes (add/remove/import), not just when their own controls change. renderExam
+    // is defined in app.js, loaded before this file, and is a plain top-level function — safe
+    // to wrap without editing app.js.
     if(typeof renderExam === 'function'){
       const originalRenderExam = renderExam;
       renderExam = function(){
         originalRenderExam.apply(this, arguments);
         renderScopePreview();
+        renderGradeColumn();
       };
     }
 
@@ -718,16 +759,36 @@
     const gradingEnabledEl = document.getElementById('examGradingEnabled');
     const gradingPanel = document.getElementById('gradingPanel');
     const gradingPresetEl = document.getElementById('gradingPreset');
+    const editGradingBtn = document.getElementById('editGradingBtn');
+
+    // Single source of truth for whether the grading editor panel is visibly expanded.
+    // The "Edit grading" link only ever shows when grading is ON but the panel is collapsed —
+    // there's no reason to show it while the panel is already open, or while grading is off.
+    function setGradingPanelOpen(open){
+      if(!gradingPanel) return;
+      gradingPanel.style.display = open ? 'block' : 'none';
+      if(editGradingBtn) editGradingBtn.style.display = (grading.enabled && !open) ? 'inline-flex' : 'none';
+    }
 
     if(gradingEnabledEl){
       gradingEnabledEl.checked = grading.enabled;
-      gradingPanel.style.display = grading.enabled ? 'block' : 'none';
+      setGradingPanelOpen(grading.enabled);
       gradingEnabledEl.addEventListener('change', () => {
         grading.enabled = gradingEnabledEl.checked;
         saveGrading(grading);
-        gradingPanel.style.display = grading.enabled ? 'block' : 'none';
+        // Turning grading on opens the editor so the user can pick/confirm a scheme;
+        // turning it off hides the editor entirely (nothing left to collapse).
+        setGradingPanelOpen(grading.enabled);
+        renderGradeColumn();
       });
     }
+
+    document.getElementById('doneGradingBtn')?.addEventListener('click', () => {
+      setGradingPanelOpen(false);
+    });
+    editGradingBtn?.addEventListener('click', () => {
+      setGradingPanelOpen(true);
+    });
 
     gradingPresetEl?.addEventListener('change', () => {
       grading.preset = gradingPresetEl.value;
@@ -739,15 +800,18 @@
         : GRADE_PRESETS[grading.preset].map(b=>({...b}));
       saveGrading(grading);
       renderGradeBandsList();
+      renderGradeColumn();
     });
 
     document.getElementById('addGradeBandBtn')?.addEventListener('click', () => {
       grading.bands.push({ label:'New', min:0 });
       saveGrading(grading);
       renderGradeBandsList();
+      renderGradeColumn();
     });
 
     renderGradeBandsList();
+    renderGradeColumn();
   });
 
 })();
