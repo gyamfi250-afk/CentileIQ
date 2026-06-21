@@ -799,6 +799,16 @@
       setGradingPanelOpen(true);
     });
 
+    document.getElementById('resetGradingBtn')?.addEventListener('click', () => {
+      if(!confirm('Reset grading to the default WASSCE scheme and turn grading off? Any custom bands you\'ve set up will be lost.')) return;
+      grading = { enabled:false, preset:'wassce', bands: GRADE_PRESETS.wassce.map(b=>({...b})) };
+      saveGrading(grading);
+      if(gradingEnabledEl) gradingEnabledEl.checked = false;
+      renderGradeBandsList();
+      renderGradeColumn();
+      setGradingPanelOpen(false);
+    });
+
     gradingPresetEl?.addEventListener('change', () => {
       grading.preset = gradingPresetEl.value;
       // Switching to a built-in preset resets bands to that preset's defaults. Switching to
