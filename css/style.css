@@ -261,6 +261,32 @@ thead th{position:sticky; top:0; z-index:2;}
     pointer-events:none;
     z-index:1000;
   }
+
+  /* Force the score-distribution / growth chart onto its own dedicated full page when
+     printing, rather than sharing a page with the table above it. break-before/after are
+     applied on BOTH sides of the card (modern + legacy property names) since Chrome has
+     historically needed both set to reliably honor a forced break in either direction.
+     Deliberately does NOT touch `display` — the card's existing inline display:none/block
+     toggle (set by app.js based on whether there's data) is left alone, so an empty/hidden
+     chart never gets forced visible or given a blank full page. */
+  .chart-card{
+    page-break-before: always;
+    break-before: page;
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    min-height: 90vh;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .chart-card[style*="block"]{
+    display: flex;
+  }
+  .chart-card .canvas-box{
+    height: 70vh !important;
+    flex: 1;
+  }
 }
 .print-watermark{display:none;}
 footer.app-footer{margin-top:30px; padding-top:16px; border-top:1px solid var(--line); font-size:12px; color:var(--ink-soft);}
